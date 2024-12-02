@@ -1,0 +1,567 @@
+---
+title: "Nonparametric Statistics"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+---
+
+```{r include=FALSE}
+library(ggplot2)
+library(plyr)
+```
+
+# 背景介绍
+
+某研究机构获得一组研究数据，包含1000名婴儿的出生体重和6个相关变量。
+
+# 研究问题聚焦
+
+我们的研究问题就针对于这份数据，研究各因素对于婴儿出生体重的影响，重点聚焦于2500g以下的低体重婴儿的分类问题。
+
+# 问题一
+
+## 研讨问题
+
+### (1)
+
+定义低出生体重婴儿体重在2500g以下。请绘制未婚黑人母亲的婴儿出生体重经验分布函数的点估计和置信区间估计（置信度为90%），并从图上观察、判断婴儿低体重和母亲婚姻状况之间的关系。
+
+解答：
+
+根据Dvoretzky-Kiefer-Wolfowitz不等式,令
+$$
+L(x)=max\{F_n(x)-\epsilon_n,0\},\quad U[x]=min\{F_n(x)+\epsilon_n,1\}
+\\式中\epsilon_n=\sqrt{\frac{1}{2n}ln\frac{2}{\alpha}}
+\\则有P(L(x)\leqslant F(x)\leqslant U(x))\geqslant1-\alpha，此处\alpha=0.1
+$$
+代码如下:
+
+```{r}
+data=read.csv("infant_weight.csv")
+infant_weight=data
+infant_weight$low_weight = cut(infant_weight$weight,c(-1,2500.01,10000),labels = c("low_weight","normal_weight"))
+infant_weight$low_gtwt = cut(infant_weight$m.wtgain,c(-31,0,80),labels = c("low_gtwt","normal_gtwt"))
+infant_weight$m.wtgain_2 = infant_weight$m.wtgain**2
+
+mytheme = theme(axis.text.x = element_text(angle = 0,vjust = 0.5,size = 12), #设置x坐标轴的文字属性
+                plot.title = element_text(hjust = 0.5),
+                panel.background=element_rect(fill="white",color="black"),#白底黑框
+                panel.grid = element_blank()) #无网格线
+
+weight.sort=sort(data$weight[data$black==1&data$married==0])
+weight.rank=rank(weight.sort)
+n=length(weight.sort)
+weight.ecd=weight.rank/n
+band=sqrt(log(2/0.1)/(2*n))
+
+
+lower.9=weight.ecd-band
+upper.9=weight.ecd+band
+lower.9[which(lower.9<0)]=0
+upper.9[which(upper.9>1)]=1
+
+
+
+df=data.frame("weight"=weight.sort, "F"=weight.ecd,"l"=lower.9,"u"=upper.9)
+
+ggplot(data=df)+
+  geom_line(mapping = aes(x=weight,y=F))+
+  geom_point(mapping = aes(x=weight,y=F),size=0.1)+
+  geom_line(mapping = aes(x=weight,y=l),linetype="dashed")+
+  geom_line(mapping=aes(x=weight,y=u),linetype="dashed")+
+  labs(y="Fn(x)")
+```
+
+
+
+### (2)
+
+```{r}
+#
+infant_weight$low_gtwt2 = cut(infant_weight$m.wtgain,c(-50,-25,-15,-5,5,15,40,100),labels = c(1,2,3,4,5,6,7))
+countDf = ddply(infant_weight,.(low_gtwt2,black,low_weight),nrow)
+countDf1 = countDf[countDf$low_weight == "low_weight",]
+countDf2 = countDf[countDf$low_weight != "low_weight",]
+
+countDf1$total = countDf1$V1+countDf2$V1
+countDf1$rate = countDf1$V1/countDf1$total
+knitr::kable(countDf1)
+
+lmP1 = glm(V1~low_gtwt2+black+offset(log(total)),data = countDf1,family = "poisson")
+summary(lmP1)
+```
+
+Poisson模型结果如上，其中黑人母亲的低体重婴儿出生率更高，大约是基准类（非黑人）的两倍。同时，母亲在孕期的体重增加量越大，出生婴儿的低体重的概率更低，其中如果母亲孕期体重增加了15磅以上，则婴儿的低体重率约为体重减少了25磅或者更多的母亲的1/6.
+
+
+
+## 后续讨论题
+
+### (1)
+
+尝试对母亲的受教育程度进行分析，并将其与母亲是否已婚纳入低出生体重婴儿的原因回归模型，进一步分析得出结论。
+
+解答：
+```{r}
+#受过大学教育
+data$ed[which(data$ed.col==1)]="col"
+#受过高中教育
+data$ed[which(data$ed.hs==1)]="hs"
+data$ed[which(data$ed.hs+data$ed.col==0)]="na"
+
+
+
+data$lw=0
+data$lw[which(data$weight<2500)]=1
+
+count=aggregate(data$lw,by=list(data$ed,data$married),sum)
+count_m=aggregate(data$lw,by=list(data$ed,data$married),length)
+comeout=data.frame('受教育程度'=count$Group.1,'是否已婚'=count$Group.2,'低体重婴儿数'=count$x,'母亲数'=count_m$x,'低体重婴儿比例'=count$x/count_m$x)
+
+
+knitr::kable(comeout,align='c') 
+```
+
+观察上表可以发现，从受教育程度方面分析：受过大学教育的母亲生育出低体重婴儿的比例比其他受教育程度的母亲小；从是否已婚的方面分析：已婚的母亲数量高于未婚的母亲数量，且已婚母亲生育出低体重婴儿的比例更低。
+
+根据这些表象分析，可以将婴儿低体重数作为因变量，将母亲的受教育程度和已婚情况作为因变量，婴儿总数即母亲总数作为基数，建立Poisson回归模型，R程序如下：
+
+
+```{r}
+df=data.frame(lw=count$x,m=count_m$x,married=count$Group.2,ed=count$Group.1)
+
+fit=glm(lw~offset(log(m))+married+ed,data=df,family =poisson)
+summary(fit)
+```
+
+从模型输出结果来看，不存在过度拟合且所有系数均十分显著，训练样本的拟合度较好。从回归系数分析得到：已婚母亲相较于未婚母亲，生育出低体重婴儿的可能性更低；而受教育程度方面，没受过大学教育的母亲生育出低体重婴儿的可能性更高。所以受教育和是否已婚都对低体重婴儿出生率的影响是显著的，与之前的分析一致。
+
+
+### (2)
+
+#### 2.1 单因素的对数线性模型
+
+```{r}
+#单因素的对数线性模型
+### 是否为黑人与低体重婴儿出生率的对数线性模型
+couTab_black_weight = ddply(infant_weight,.(black,low_weight),nrow) #计数，将不同指标下的低体重婴儿出生数进行统计
+couMat_black_weight = matrix(couTab_black_weight$V1,2,2) #将数据转换为矩阵格式
+# 矩阵行列命名
+colnames(couMat_black_weight) = c(0,1) 
+rownames(couMat_black_weight) = c("low","nor")
+
+# 将频数转化为对数概率，方便计算
+couMat_fLog_bw = log(couMat_black_weight/sum(couMat_black_weight))
+mean_fLog_bw = mean(couMat_fLog_bw) # 计算概率几何均值
+
+# 分别计算行均值和列均值
+colmean_fLog_bw = colMeans(couMat_fLog_bw)
+rowmean_fLog_bw = rowMeans(couMat_fLog_bw)
+
+# 计算交互效应
+inter_fLog_bw = couMat_fLog_bw + mean_fLog_bw - matrix(rep(colmean_fLog_bw,2),2,2,byrow = T) - matrix(rep(rowmean_fLog_bw,2),2,2,byrow = F)
+colnames(inter_fLog_bw) = c("else","black")
+knitr::kable(inter_fLog_bw)
+
+#gtwt
+### 母亲孕期不同的体重增长量与低体重婴儿出生率的对数线性模型
+couTab_gtwt_weight = ddply(infant_weight,.(low_gtwt2,low_weight),nrow) # 计数，将不同指标下的低体重婴儿出生数进行统计
+couMat_gtwt_weight = matrix(couTab_gtwt_weight$V1,2,7) # 将数据转换为矩阵格式
+# 矩阵行列命名
+colnames(couMat_gtwt_weight) = seq(1,7,1)
+rownames(couMat_gtwt_weight) = c("low","nor")
+
+# 将频数转化为对数概率，方便计算
+couMat_fLog_gtw = log(couMat_gtwt_weight/sum(couMat_gtwt_weight))
+mean_fLog_gtw = mean(couMat_fLog_gtw)# 计算概率几何均值
+
+# 分别计算行均值和列均值
+colmean_fLog_gtw = colMeans(couMat_fLog_gtw)
+rowmean_fLog_gtw = rowMeans(couMat_fLog_gtw)
+
+# 计算交互效应
+inter_fLog_gtw = couMat_fLog_gtw + mean_fLog_gtw - matrix(rep(colmean_fLog_gtw,2),2,7,byrow = T) - matrix(rep(rowmean_fLog_gtw,7),2,7,byrow = F)
+knitr::kable(inter_fLog_gtw)
+```
+
+两变量的对数线性模型得到的结果如上： 从交互效应来看，黑人母亲的低体重婴儿出生率更高，孕期体重增加的母亲的低体重婴儿出生率更低，且增加幅度越大，低体重婴儿出生率越低。这一点与Poisson回归的系数的方向是一致的。
+
+#### 2.2 两因素的对数线性模型
+
+```{r}
+# 两因素的对数线性模型
+couTab_black_gtwt_weight = ddply(infant_weight,.(black,low_gtwt2,low_weight),nrow) # 计数
+couTab_black_gtwt_weight$pLog = log(couTab_black_gtwt_weight$V1/sum(couTab_black_gtwt_weight$V1)) # 计算对数概率
+mean_fLog_bgtw = mean(couTab_black_gtwt_weight$pLog) # 计算对数均值，即几何概率均值
+
+# 分别计算三个变量不同类别下的概率均值
+mu_black = ddply(couTab_black_gtwt_weight,.(black),function(x){c(muB = mean(x$pLog))})
+mu_gtwt = ddply(couTab_black_gtwt_weight,.(low_gtwt2),function(x){c(muG = mean(x$pLog))})
+mu_weight = ddply(couTab_black_gtwt_weight,.(low_weight),function(x){c(muW = mean(x$pLog))})
+
+# 将计算结果合并入原有矩阵
+couTab_black_gtwt_weight = merge(couTab_black_gtwt_weight,mu_black,by = "black",all.x = T)
+couTab_black_gtwt_weight = merge(couTab_black_gtwt_weight,mu_gtwt,by = "low_gtwt2",all.x = T)
+couTab_black_gtwt_weight = merge(couTab_black_gtwt_weight,mu_weight,by = "low_weight",all.x = T)
+
+# 在三个变量中，两两计算联合概率均值；将计算结果并入原有矩阵
+mu_black_gtwt = ddply(couTab_black_gtwt_weight,.(black,low_gtwt2),function(x){c(
+  muBG = mean(x$pLog)
+)})
+mu_black_weight = ddply(couTab_black_gtwt_weight,.(black,low_weight),function(x){c(
+  muBW = mean(x$pLog)
+)})
+mu_weight_gtwt = ddply(couTab_black_gtwt_weight,.(low_weight,low_gtwt2),function(x){c(
+  muWG = mean(x$pLog)
+)})
+
+couTab_black_gtwt_weight = merge(couTab_black_gtwt_weight,mu_black_gtwt,all.x = T)
+couTab_black_gtwt_weight = merge(couTab_black_gtwt_weight,mu_black_weight,all.x = T)
+couTab_black_gtwt_weight = merge(couTab_black_gtwt_weight,mu_weight_gtwt,all.x = T)
+
+# 计算是否为黑人对低体重婴儿出生率的效应
+couTab_black_gtwt_weight$sumBW = couTab_black_gtwt_weight$pLog + mean_fLog_bgtw - couTab_black_gtwt_weight$muB - couTab_black_gtwt_weight$muW
+xiaoying_BW = ddply(couTab_black_gtwt_weight,.(black,low_weight),function(x){mean(x$sumBW)})
+
+# 计算母亲孕期体重增加量对低体重婴儿出生率的效应
+couTab_black_gtwt_weight$sumGW = couTab_black_gtwt_weight$pLog + mean_fLog_bgtw - couTab_black_gtwt_weight$muG - couTab_black_gtwt_weight$muW
+xiaoying_GW = ddply(couTab_black_gtwt_weight,.(low_gtwt2,low_weight),function(x){mean(x$sumGW)})
+
+# 计算两个变量的联合效应
+couTab_black_gtwt_weight$sumBGW = couTab_black_gtwt_weight$pLog - couTab_black_gtwt_weight$muBG - couTab_black_gtwt_weight$muWG - couTab_black_gtwt_weight$muBW +couTab_black_gtwt_weight$muB +couTab_black_gtwt_weight$muG + couTab_black_gtwt_weight$muW  - mean_fLog_bgtw
+xiaoying_BGW = ddply(couTab_black_gtwt_weight,.(black,low_gtwt2,low_weight),function(x){mean(x$sumBGW)})
+
+lmP2 = glm(V1~low_gtwt2+black+low_gtwt2:black+offset(log(total)),data = countDf1,family = "poisson")
+summary(lmP2)
+
+bwm = matrix(xiaoying_BW$V1,2,2)
+colnames(bwm) = c("else","black")
+rownames(bwm) = c("low","nor")
+gwm = matrix(xiaoying_GW$V1,2,7)
+colnames(gwm) = seq(1,7)
+rownames(gwm) = c("low","nor")
+
+bgm = matrix(xiaoying_BGW[xiaoying_BGW$low_weight == "low_weight",]$V1,2,7,byrow = T)
+colnames(bgm) = seq(1,7)
+rownames(bgm) = c("else","black")
+
+
+knitr::kable(bwm,caption = "black~weight")
+knitr::kable(gwm,caption = "getweight(孕期增重)~weight")
+knitr::kable(bgm,caption = "black~getweight(孕期增重)的效应")
+```
+
+两因素的对数线性模型比两个单因素模型的优势是可以探究变量效应之间的交互关系，类似于在poisson模型中加入交互项。最后的结果如上所示，两因素的分析结果在两个单因素上没有显然的差异，而两个因素之间的交互效应较弱，对比两个因素的效应显得较小。
+
+对于因素之间的作用关系，我们可以使用卡方检验进行进一步探究，但此处也可以直接使用poisson模型加入交互项进行探究。poisson模型得到的结果中，我们可以看到交互项的影响较弱且大部分没有通过显著性检验。
+
+
+# 问题二
+
+除了以上问题外，还可以使用哪些方法从哪些方面进行分析。
+
+# 研究思路与框架
+
+婴儿体重是连续型变量，而进行2500g以下为低体重婴儿的定义，使其变为一个离散型二分类变量。所以我们分别从离散型方向和连续型方向进行问题的探究。
+
+# 拓展研究一
+
+之前的讨论基于肤色、孕期体重增加量、受教育程度和婚姻状况这几个因素分析对婴儿出生体重的影响，现在结合婴儿是否为男生这一因素进行进一步的探究。
+
+首先针对boy这一变量进行描述性统计：
+```{r}
+data$boy=as.factor(data$boy)
+ggplot(data=data)+geom_boxplot(aes(x=boy,y=weight,fill=boy))
+```
+
+从上图可以看出，从整体而言，男婴的体重比女婴更高，但由于outlier都很多，所以按2500g以下的婴儿为低体重的定义进行列表：
+
+
+
+```{r}
+
+count_b=aggregate(data$lw,by=list(data$boy),sum)
+
+n=length(which(data$boy==1))
+t=c(nrow(data)-n,n)
+
+comeout=data.frame('boy'=count_b$Group.1,'low_weight'=count_b$x,'low_weight_rate'=count_b$x/t)
+knitr::kable(comeout,align='c') 
+```
+
+从表中看出，男婴的低体重数和低体重率都比较低，所以将婴儿低体重数作为因变量，将婴儿性别作为因变量，婴儿总数即作为基数，建立Poisson回归模型，R程序如下：
+
+```{r}
+df=data.frame(x=count_b$x,n=t,boy=data$boy)
+fit=glm(data=df,formula =x~boy+offset(log(n)),family = poisson)
+summary(fit)
+```
+
+从模型结果来看，变量是显著的。从系数上观察可以发现，性别为男的婴儿低体重的可能性更低，但这种差异十分微小。
+
+# 拓展研究二
+
+基于我们的研究问题，我们考虑从条件分布的位置和尺度两方面对数据进行分析。考虑到篇幅问题，我们仅选择作用效果显著的三个变量。
+
+```{r}
+y1 = infant_weight$weight
+y2 = cut(y1,c(-1,2500.01,10000),labels = c("低体重","正常"))
+
+
+xb = infant_weight$black # 是否为黑人
+xm = infant_weight$married # 是否结婚
+xb2 = infant_weight$boy # 是否为男孩
+
+xh = infant_weight$ed.hs # 是否高中学历
+xc = infant_weight$ed.col #是否大学学历
+xe = factor(xh+xc*2,labels = c("基准","高中","大学")) # 不同学历汇总
+
+xs = infant_weight$smoke # 是否吸烟 
+xg = infant_weight$m.wtgain # 孕期体重增加量
+xgf = infant_weight$low_gtwt 
+# 孕期体重增加量离散处理，按照-10和10两个界限分为3段，分别记作体重增加(get)，体重不变(nochange)，体重减少(lose)
+xgf2 = cut(xg,c(-50,-10,10,100),labels = c("lose","nochange","get")) 
+```
+
+## 因变量离散化
+
+### 数据可视化
+
+```{r echo=FALSE}
+#数据可视化
+#分类变量棘状图
+par(mfrow = c(2,3))
+
+countTable = table(xb,y2)
+spineplot(countTable,col = rainbow(7,alpha = 0.1)[2:3],main = "黑人母亲？",xlab = "",ylab = "")
+
+countTable = table(xm,y2)
+spineplot(countTable,col = rainbow(7,alpha = 0.1)[2:3],main = "未婚先孕？",xlab = "",ylab = "")
+
+countTable = table(xb2,y2)
+spineplot(countTable,col = rainbow(7,alpha = 0.1)[2:3],main = "男孩女孩？",xlab = "",ylab = "")
+
+countTable = table(xs,y2)
+spineplot(countTable,col = rainbow(7,alpha = 0.1)[2:3],main = "是否吸烟？",xlab = "",ylab = "")
+
+countTable = table(xgf,y2)
+spineplot(countTable,col = rainbow(7,alpha = 0.1)[2:3],main = "孕期增重",xlab = "",ylab = "")
+
+countTable = table(xgf2,y2)
+spineplot(countTable,col = rainbow(7,alpha = 0.1)[2:3],main = "孕期增重",xlab = "",ylab = "")
+```
+
+```{r}
+par(mfrow = c(1,2),pin = c(2,2))
+
+countTable = table(xh,y2)
+spineplot(countTable,col = rainbow(7,alpha = 0.1)[2:3],main = "高中学历？",xlab = "",ylab = "")
+
+countTable = table(xc,y2)
+spineplot(countTable,col = rainbow(7,alpha = 0.1)[2:3],main = "大学人才？",xlab = "",ylab = "")
+
+
+par(mfrow = c(1,1),pin = c(3,3))
+
+countTable = table(xe,y2)
+spineplot(countTable,col = rainbow(7,alpha = 0.1)[2:3],main = "教育层次",xlab = "",ylab = "")
+```
+
+我们绘制了不同学历层次与低体重婴儿发生率的棘状图，可以看到比较奇怪的地方是，高中学历的母亲低体重婴儿率反而更高，而这不太符合我们的常规认知，即高学历能够带来更好的物质条件，即使高中学历偏低，但是不应当发生倒挂现象。
+
+我们思考后发现问题在于我们没有将不同学历层次合并来考虑，事实上，非高中学历的人可能是比高中学历低，但也可以是比高中学历更高。因此我们重新绘制了学历和低体重婴儿发生率之间关系的棘状图如下，可以看到，高中学历和基准组基本没有差异，但也不存在高中学历母亲的低体重婴儿率更高的情况。
+
+### Logistic回归
+
+在分析多变量对离散变量的影响时，Poisson回归和Logistic回归是两种常用的参数方法，其分别针对计数变量和0-1分类变量。由于我们研究的问题中，低体重婴儿既可以作为计数变量（即有多少婴儿发生了低体重情况），也可以被视作0-1变量（即一位婴儿是否发生低体重情况），所以两类回归都可以进行尝试。由于课后习题中探究了Poisson回归问题，因此我们在这里尝试一下Logistic回归并与Poisson回归进行对比。
+
+```{r}
+y2 = factor(y2)
+modelL = glm(y2~xb+xm+xe+xs+xgf2,family = "binomial")
+
+infant_weight$low_gtwt3 = cut(infant_weight$m.wtgain,c(-50,-10,10,100),labels = c(1,2,3))
+countDf = ddply(infant_weight,.(low_gtwt3,black,low_weight),nrow)
+countDf1 = countDf[countDf$low_weight == "low_weight",]
+countDf2 = countDf[countDf$low_weight != "low_weight",]
+
+countDf1$total = countDf1$V1+countDf2$V1
+countDf1$rate = countDf1$V1/countDf1$total
+
+lmP1 = glm(V1~low_gtwt3+black+offset(log(total)),data = countDf1,family = "poisson")
+
+#Logistic
+print(summary(modelL))
+#Poisson
+print(summary(lmP1))
+```
+
+小结：
+
+1. Logitstic模型在“是否为黑人”和“是否在孕期增加了体重”上的参数估计与Poisson模型的结果方向一致，且数值结果接近。但是Poisson模型的一个劣势是，当自变量增加时，自变量组合的类别会迅速增加，可能出现某一种比较少见的自变量组合在数据中没有出现，这会给模型的估计带来一定麻烦。但是Logitstic模型可以比较便捷地应对这种情况。
+
+2. Logitstic模型回归结果的参数解读与我们的预期基本一致
+    * 母亲孕期体重减少会增大婴儿体重低的可能性；
+    * 黑人母亲、吸烟母亲生出体重低的婴儿可能性更大；
+    * 已婚母亲、接受过大学教育的母亲生出体重低的婴儿可能性更小；
+    * 婴儿为男婴时，体重低的可能性更小。
+  
+3. 参数解读中，我们可以发现影响较为显著的变量包括“是否为黑人”（系数为-0.69）、“是否吸烟”（系数为-0.70）、“孕期体重是否发生变化”（系数分别为0.75和1.44）。因此在接下来的研究中，我们将主要研究这三个变量。
+  
+# 拓展研究三
+  
+## 连续化处理
+
+尽管我们可以将婴儿体重离散化为0-1变量进行处理，但是在我们的研究问题下（“什么因素会对婴儿体重产生影响”），这样的处理必然会损失大量信息。
+
+事实上，这样一个问题我们可以将其归结为一个条件分布问题，只是我们在实际研究中将其简化为了分布的位置情况（某些时候也会考察分布的离散情况）。接下来我们将尝试不同的方法来分析“是否为黑人”、“是否吸烟”、“孕期体重是否发生变化”这三个变量对婴儿体重的影响。
+
+### 起点：线性模型
+
+```{r}
+# 可视化展示
+pdf1 = as.data.frame(cbind(y1,xb,xs,xgf2))
+gp = ggplot(data = pdf1,mapping = aes(y = y1)) + 
+  mytheme
+gp+geom_boxplot(aes(x = factor(xb),fill = factor(xb)),varwidth = T)+ #通过varwidth实现箱的宽度与数量相关
+  scale_fill_manual(values = rainbow(7,alpha = 0.1))
+gp+geom_boxplot(aes(x = factor(xs),fill = factor(xs)),varwidth = T)+ #通过varwidth实现箱的宽度与数量相关
+  scale_fill_manual(values = rainbow(7,alpha = 0.1))
+gp+geom_boxplot(aes(x = factor(xgf2),fill = factor(xgf2)),varwidth = T)+ #通过varwidth实现箱的宽度与数量相关
+  scale_fill_manual(values = rainbow(7,alpha = 0.1))
+
+hist(xg)
+hist(y1)
+```
+
+从可视化展示来看，三个变量的不同处理之间确实存在水平差异，但是否显著有待进一步探究。同时不同处理之间的箱线图宽度可能存在差异。
+
+接下来我们建立线性模型，此处自变量选择“是否为黑人”、“是否吸烟”、“孕期体重增加量”，此处我们将“孕期体重增加量”作为连续变量加入模型。
+
+```{r}
+model2 = lm(y1~xb+xs+xg)
+summary(model2)
+mean(y1)
+```
+
+小结：
+
+1. 线性模型的回归参数中我们可以看到，是否为黑人与是否吸烟，对于婴儿体重的平均影响均在250g附近，而母亲孕期每增加1磅（约450g），婴儿出生体重平均增加8.64g，也就是说，一位母亲在孕期增加了20磅的体重，那么我们预期其婴儿出生时体重较基准值高出172g。
+
+2. 总体来看，婴儿的出生体重的基准值为3436g（截距项），是否黑人与是否吸烟能够影响的量大概在500g，母亲孕期体重变化的贡献大概在100-200g，而低体重婴儿的基准线在2500g。因此综合各个参数的数量级来看，我们选择的三个变量对于婴儿是否为低体重有比较明显的影响。
+
+### 核密度估计
+
+至此，我们构建了一个线性模型，用于衡量我们选择的三个变量对于婴儿体重的期望的影响。也就是说，我们在上面考虑了条件分布的位置参数情况，那么接下来我们将尝试使用核密度估计的方法来粗略展示，变量的不同水平下，婴儿体重的分布情况。
+
+```{r}
+# 对数据进行标准化处理有利于之后的分析，且不会影响分布情况。
+ys = (y1-mean(y1))/sd(y1)
+#hist(ys)
+```
+
+```{r}
+ho = function(x){1.06*x**(-0.02)}
+d1 = density(ys,bw = ho(50000))
+plot(d1,ylim = c(0,0.4))
+x = seq(-5,5,0.001)
+lines(x,dnorm(x),col = 4)
+legend("topleft",c("总体分布","正态分布"),lty = c(1,1),col = c(1,4),cex = .8)
+```
+
+```{r}
+# black
+plot(d1)
+
+db0 = density(ys[xb == 0],bw = ho(sum(xb == 0)))
+lines(db0,col = 2)
+
+db1 = density(ys[xb == 1],bw = ho(sum(xb == 1)))
+lines(db1,col = 3)
+legend("topleft",c("base","非黑人母亲","黑人母亲"),lty = c(1,1),col = c(1,2,3),cex = .8)
+```
+
+```{r}
+# smoke
+plot(d1)
+
+ds0 = density(ys[xs == 0],bw = ho(sum(xs == 0)))
+lines(ds0,col = 2)
+
+ds1 = density(ys[xs == 1],bw = ho(sum(xs == 1)))
+lines(ds1,col = 3)
+legend("topleft",c("base","不吸烟","吸烟"),lty = c(1,1),col = c(1,2,3),cex = .8)
+```
+
+```{r}
+# get weight
+plot(d1)
+for(i in 1:3){
+  tmp = density(ys[as.numeric(xgf2) == i],bw = ho(sum(as.numeric(xgf2) == i)))
+  lines(tmp,col = i+1)
+}
+legend("topleft",c("base","体重降低","体重不变","体重增加"),lty = c(1,1),col = c(1,2,3,4),cex = .8)
+
+```
+
+从核密度估计结果来看有以下结论：
+
+1. 婴儿出生体重的分布与正态分布相比属于厚尾分布，方差更大，离散程度更大。
+
+2. 非黑人、非吸烟、体重不变的母亲的婴儿出生体重分布接近总体分布。
+
+3. 黑人母亲、吸烟母亲的婴儿出生体重分布的均值均低于总体分布；同时分布的集中程度略有下降，也就是婴儿的出生体重的方差可能更大。
+
+4. 孕期体重增加的母亲，其婴儿出生体重的分布近乎是总体分布的平移，也就是婴儿出生体重的期望更大，而方差差异不大。
+
+### 百分位数回归
+
+在上面，我们使用核密度估计的方法简单分析了**离散变量**的不同水平下，分布的离散性变化。而针对连续性变量，我们可以使用百分位数回归的方法来分析自变量对于因变量的离散性的影响。
+
+```{r message=FALSE, warning=FALSE}
+library(quantreg)
+modelQ5 = rq(y1~xb+xs+xg,tau = 0.5)
+modelQ9 = rq(y1~xb+xs+xg,tau = 0.9)
+modelQ1 = rq(y1~xb+xs+xg,tau = 0.1)
+summary(modelQ1)
+summary(modelQ5)
+summary(modelQ9)
+
+#绘图
+#选择非黑人，非吸烟母亲作为基准
+plot(xg,y1,cex = 0.1)
+abline(coef(modelQ1)[1],coef(modelQ1)[4],col = 2)
+abline(coef(modelQ5)[1],coef(modelQ5)[4],col = 3)
+abline(coef(modelQ9)[1],coef(modelQ9)[4],col = 4)
+```
+
+从百分位数回归结果来看，0.9分位数的系数为7.08，0.5分位数下的系数为7.21，而0.1分位数下的系数为10.0。这样一来，我们可以认为当母亲体重增加时，婴儿出生时的体重的方差会减小。绘图后会发现这种效应确实存在但并不是很明显，因此可以使用KhmaladzeTest检验模型具体类型。
+
+```{r warning=FALSE}
+a = KhmaladzeTest(y1~xg,tau = 1:19/20,nullH = "location-scale")
+b = KhmaladzeTest(y1~xg,tau = 1:19/20)
+print(paste0("位置模型：",round(b$THn,3),"\t","位置-尺度模型",round(a$THn,3)))
+```
+
+从结果来看，位置模型可能更适合于该问题，也就是说母亲孕期体重增加对方差的影响并不显著。
+
+
+# 结论与总结
+
+1. 母亲孕期体重减少会增大婴儿体重低的可能性；
+2. 黑人母亲、吸烟母亲生出体重低的婴儿可能性更大；
+3. 已婚母亲、接受过大学教育的母亲生出体重低的婴儿可能性更小；
+4. 婴儿为男婴时，体重低的可能性更小。
+5. 黑人母亲、吸烟母亲的婴儿体重分布更离散，方差更大。
+6. 随着母亲孕期体重增加的越多，婴儿的体重分布方差越小，但实际情况并非特别显著。
+
+
+# 参考文献
+
+[1] 王星.非参数统计[M].北京：电子工业出版社，2016.
+
+[2] 周志华.机器学习[M].北京：清华大学出版社，2020.
+
+
+
+
